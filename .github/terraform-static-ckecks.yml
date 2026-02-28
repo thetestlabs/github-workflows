@@ -1,4 +1,4 @@
-name: TERRAFORM STACK
+name: TERRAFORM STATIC CHECKS
 
 on:
   workflow_call:
