@@ -1,0 +1,20 @@
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Tooling
+.terragrunt-cache/
+.tflint.d/
+
+# Editor
+.vscode/
+.idea/

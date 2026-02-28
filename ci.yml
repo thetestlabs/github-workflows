@@ -1,0 +1,250 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CI/CD
+
+# This workflow is intended to be reusable across new repositories.
+# It assumes a “preferred” testing suite of:
+# - Jest for unit/component/contract tests + coverage (`npm run test:coverage`)
+# - Playwright for E2E (`npm run test:e2e`)
+# - Playwright + axe-core for accessibility (`npm run test:a11y`)
+# - Lighthouse CI for performance budgets (`npm run lighthouse`) when configured
+#
+# Lighthouse CI serving strategy (recommended):
+# - Collect against a production build served locally in CI (stable + repeatable).
+# - Prefer: `npm run build` then a static/preview server (e.g. Vite preview or a simple http server).
+# - Avoid collecting against `npm run dev` in CI: dev servers are slower, less representative, and more variable.
+# - Optionally run a second “after deploy” LHCI pass against the staging URL to catch CDN/runtime differences.
+#
+# New repos should provide (at minimum):
+# - package.json scripts: lint, type-check, test:coverage, test:e2e, test:a11y
+# - Playwright config (playwright.config.*) and any a11y config if split
+# - Prettier config (.prettierrc or prettier.config.*)
+# - Lighthouse CI config (.lighthouserc.* or lighthouserc.*) OR set RUN_LHCI=true and ensure `npm run lighthouse` is fully self-contained
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: eu-west-2 # Update with the AWS region used for deployments
+  RUN_LHCI: "false" # Set to 'true' (or add a lighthouserc) to enable Lighthouse CI in this workflow
+  RUN_LHCI_POST_DEPLOY: "false" # Set to 'true' to run an additional LHCI pass against deployed URLs
+  STAGING_BASE_URL: "" # e.g. https://staging.example.com (required for post-deploy LHCI)
+  PROD_BASE_URL: "" # e.g. https://example.com (required for post-deploy LHCI)
+  AWS_STAGING_ROLE_ARN: arn:aws:iam::123456789012:role/replace-with-staging-role
+  AWS_PROD_ROLE_ARN: arn:aws:iam::123456789012:role/replace-with-prod-role
+  STAGING_BUCKET: replace-with-staging-bucket
+  STAGING_CLOUDFRONT_DISTRIBUTION_ID: replace-with-staging-distribution
+  PROD_BUCKET: replace-with-prod-bucket
+  PROD_CLOUDFRONT_DISTRIBUTION_ID: replace-with-prod-distribution
+
+jobs:
+  test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check (Prettier)
+        run: npx prettier --check .
+
+      - name: Type check
+        run: npm run type-check
+
+      # Preferred: Jest with coverage + thresholds.
+      # (In this repo, `test:coverage` currently maps to the existing runner.)
+      - name: Unit/contract tests with coverage
+        run: npm run test:coverage
+
+      - name: E2E tests (Playwright)
+        run: npm run test:e2e
+
+      - name: Accessibility regression tests (Playwright + axe-core)
+        run: npm run test:a11y -- --project=chromium
+
+      - name: Upload Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
+      # Lighthouse CI is enabled only when a config file is present or explicitly requested.
+      # This keeps the workflow template safe for new repos until budgets/URLs are defined.
+      - name: Lighthouse CI
+        if: ${{ env.RUN_LHCI == 'true' || hashFiles('.lighthouserc.*', 'lighthouserc.*', 'lhci.*') != '' }}
+        run: npm run lighthouse
+
+      - name: Upload Lighthouse CI artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouseci
+          path: |
+            .lighthouseci/
+          if-no-files-found: ignore
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Optional: set `environment: staging` to use GitHub Environments (approvals/secrets/protection rules).
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build favicons
+        run: npm run build:favicons
+
+      - name: Build site
+        run: npm run build
+
+      # Optional: run Lighthouse CI against the production build before deploying.
+      # Requires a Lighthouse config that either:
+      # - provides `ci.collect.startServerCommand` and `ci.collect.url`, OR
+      # - is otherwise self-contained for `lhci autorun`.
+      - name: Lighthouse CI (pre-deploy)
+        if: ${{ env.RUN_LHCI == 'true' || hashFiles('.lighthouserc.*', 'lighthouserc.*', 'lhci.*') != '' }}
+        run: npm run lighthouse
+
+      - name: Upload Lighthouse CI artifacts (pre-deploy)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouseci-predeploy
+          path: |
+            .lighthouseci/
+          if-no-files-found: ignore
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_STAGING_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy static site
+        env:
+          DEPLOY_BUCKET_STAGING: ${{ env.STAGING_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID_STAGING: ${{ env.STAGING_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: ./scripts/deploy-static-site.sh staging
+
+      # Optional: run Lighthouse CI against the deployed staging URL.
+      # This can catch CDN/runtime differences (compression, caching, redirects), but is often noisier.
+      - name: Lighthouse CI (post-deploy • staging URL)
+        if: ${{ env.STAGING_BASE_URL != '' && (env.RUN_LHCI_POST_DEPLOY == 'true' || env.RUN_LHCI == 'true') }}
+        run: npx lhci autorun --collect.url=${{ env.STAGING_BASE_URL }}
+
+      - name: Upload Lighthouse CI artifacts (post-deploy • staging)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouseci-postdeploy-staging
+          path: |
+            .lighthouseci/
+          if-no-files-found: ignore
+
+  deploy-prod:
+    name: Deploy to production
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || startswith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # Optional: set `environment: production` to use GitHub Environments (approvals/secrets/protection rules).
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build favicons
+        run: npm run build:favicons
+
+      - name: Build site
+        run: npm run build
+
+      - name: Lighthouse CI (pre-deploy)
+        if: ${{ env.RUN_LHCI == 'true' || hashFiles('.lighthouserc.*', 'lighthouserc.*', 'lhci.*') != '' }}
+        run: npm run lighthouse
+
+      - name: Upload Lighthouse CI artifacts (pre-deploy)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouseci-predeploy-prod
+          path: |
+            .lighthouseci/
+          if-no-files-found: ignore
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy static site
+        env:
+          DEPLOY_BUCKET_PROD: ${{ env.PROD_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID_PROD: ${{ env.PROD_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: ./scripts/deploy-static-site.sh prod
+
+      - name: Lighthouse CI (post-deploy • production URL)
+        if: ${{ env.PROD_BASE_URL != '' && (env.RUN_LHCI_POST_DEPLOY == 'true' || env.RUN_LHCI == 'true') }}
+        run: npx lhci autorun --collect.url=${{ env.PROD_BASE_URL }}
+
+      - name: Upload Lighthouse CI artifacts (post-deploy • production)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouseci-postdeploy-production
+          path: |
+            .lighthouseci/
+          if-no-files-found: ignore

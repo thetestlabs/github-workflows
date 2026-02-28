@@ -1,0 +1,87 @@
+name: TERRAFORM MODULE RELEASE
+
+on:
+  workflow_call:
+    inputs:
+      github_runner:
+        description: 'Name of GitHub-hosted runner or self-hosted runner'
+        default: 'ubuntu-latest'
+        required: false
+        type: string
+      semantic_version:
+        description: 'Specify specifying version range for semantic-release'
+        default: '18.0.0'
+        required: false
+        type: string
+      semantic_release_config:
+        description: 'Shareable config to create release of Terraform Modules'
+        default: '@nuvibit/github-terraform-semantic-release-config'
+        required: false
+        type: string
+      release_branch:
+        description: 'Name of branch on which Terraform Module release should happen'
+        default: 'main'
+        required: false
+        type: string
+      concurrency_group:
+        description: 'Name of concurrency group to manage concurrent github action runs'
+        default: ${{ github.repository }}/${{ github.event.pull_request.head.ref || github.ref }}
+        required: false
+        type: string
+    secrets:
+      # GitHub App credentials to use instead of default GITHUB_TOKEN to avoid not triggering workflow runs on commit
+      # make sure the Github App has the necessary permissions to push to the repository (bypassing branch protection rules)
+      GH_APP_ID:
+        required: true
+      GH_APP_PRIVATE_KEY:
+        required: true
+
+# Ensures that only one workflow runs at a time
+concurrency: ${{ inputs.concurrency_group }}
+
+jobs:
+  release:
+    runs-on: ${{ inputs.github_runner }}
+
+    steps:
+      - name: Get Github Access Token
+        id: github_app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          # if owner and repositories are empty, access will be scoped to only the current repository
+          # owner: ''
+          # repositories: ''
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Release Terraform Module
+        uses: cycjimmy/semantic-release-action@v6
+        id: semantic
+        with:
+          semantic_version: ${{ inputs.semantic_version }}
+          branch: ${{ inputs.release_branch }}
+          extends: |
+            ${{ inputs.semantic_release_config }}
+        env:
+          GITHUB_TOKEN: ${{ steps.github_app_token.outputs.token }}
+
+      - name: Workflow Summary
+        if: ${{ always() }}
+        env:
+          NEW_RELEASE_PUBLISHED: ${{ fromJSON('[":white_check_mark:", ":heavy_minus_sign:"]')[steps.semantic.outputs.new_release_published != 'true'] }}
+          LAST_RELEASE_VERSION: ${{ steps.semantic.outputs.last_release_version }}
+          NEW_RELEASE_VERSION: ${{ steps.semantic.outputs.new_release_version }}
+        run: |
+          echo '### WORKFLOW SUMMARY :octocat:' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| result | job |' >> $GITHUB_STEP_SUMMARY
+          echo '|---|---|' >> $GITHUB_STEP_SUMMARY
+          echo '| ${{ env.NEW_RELEASE_PUBLISHED }} | new release published |' >> $GITHUB_STEP_SUMMARY
+          echo '| ${{ env.LAST_RELEASE_VERSION }} | last release version |' >> $GITHUB_STEP_SUMMARY
+          echo '| ${{ env.NEW_RELEASE_VERSION }} | new release version |' >> $GITHUB_STEP_SUMMARY
