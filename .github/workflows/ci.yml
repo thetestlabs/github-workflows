@@ -86,7 +86,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload Lighthouse CI artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouseci
           path: |
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload Lighthouse CI artifacts (pre-deploy)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouseci-predeploy
           path: |
@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload Lighthouse CI artifacts (post-deploy • staging)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouseci-postdeploy-staging
           path: |
@@ -217,7 +217,7 @@ jobs:
 
       - name: Upload Lighthouse CI artifacts (pre-deploy)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouseci-predeploy-prod
           path: |
@@ -242,7 +242,7 @@ jobs:
 
       - name: Upload Lighthouse CI artifacts (post-deploy • production)
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouseci-postdeploy-production
           path: |
