@@ -20,12 +20,18 @@ name: CI/CD
 # - Prettier config (.prettierrc or prettier.config.*)
 # - Lighthouse CI config (.lighthouserc.* or lighthouserc.*) OR set RUN_LHCI=true and ensure `npm run lighthouse` is fully self-contained
 
+# on:
+#   push:
+#     branches:
+#       - main
+#   workflow_dispatch:
 on:
-  push:
-    branches:
-      - main
+  # Scheduled nightly run commented out — enable once workflow is verified.
+  # schedule:
+  #   # Run at 02:00 UTC every night (outside business hours)
+  #   - cron: "0 2 * * *"
   workflow_dispatch:
-
+    
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
