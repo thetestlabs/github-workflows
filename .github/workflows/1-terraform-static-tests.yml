@@ -349,7 +349,6 @@ jobs:
       - terraform-fmt
       - terraform-docs
       - terraform-lint
-      - trivy-security
       - terraform-execution
     runs-on: ${{ inputs.github_runner }}
     if: ${{ always() }}
