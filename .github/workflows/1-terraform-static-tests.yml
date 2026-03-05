@@ -93,7 +93,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -189,7 +189,6 @@ jobs:
         uses: reviewdog/action-tflint@v1
         id: lint
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           working_directory: ${{ inputs.terraform_working_directory }}
           tflint_version: ${{ inputs.tflint_version }}
           reporter: github-pr-check
@@ -360,7 +359,6 @@ jobs:
           TF_FMT_RESULT: ${{ needs.terraform-fmt.result == 'skipped' && ':heavy_minus_sign:' || (needs.terraform-fmt.outputs.fmt_status == 'success' && ':white_check_mark:' || ':x:') }}
           TF_DOCS_RESULT: ${{ needs.terraform-docs.result == 'skipped' && ':heavy_minus_sign:' || (needs.terraform-docs.outputs.docs_status == 'success' && ':white_check_mark:' || ':x:') }}
           TF_LINT_RESULT: ${{ needs.terraform-lint.result == 'skipped' && ':heavy_minus_sign:' || (needs.terraform-lint.outputs.lint_status == 'success' && ':white_check_mark:' || ':x:') }}
-          TF_SECURITY_RESULT: ${{ needs.trivy-security.result == 'skipped' && ':heavy_minus_sign:' || (needs.trivy-security.outputs.security_status == 'success' && ':white_check_mark:' || ':x:') }}
           TF_EXECUTION_RESULT: ${{ needs.terraform-execution.result == 'skipped' && ':heavy_minus_sign:' || (needs.terraform-execution.outputs.execution_status == 'success' && ':white_check_mark:' || ':x:') }}
           TF_EXECUTION_TYPE: ${{ needs.terraform-execution.outputs.execution_type }}
         run: |
@@ -371,7 +369,6 @@ jobs:
           echo '| ${{ env.TF_FMT_RESULT }} | terraform format |' >> $GITHUB_STEP_SUMMARY
           echo '| ${{ env.TF_DOCS_RESULT }} | terraform docs |' >> $GITHUB_STEP_SUMMARY
           echo '| ${{ env.TF_LINT_RESULT }} | terraform lint |' >> $GITHUB_STEP_SUMMARY
-          echo '| ${{ env.TF_SECURITY_RESULT }} | trivy security |' >> $GITHUB_STEP_SUMMARY
           if [[ "${{ inputs.enable_terraform_execution }}" == "true" ]]; then
             if [[ "${{ env.TF_EXECUTION_TYPE }}" == "skip" ]]; then
               echo '| :heavy_minus_sign: | terraform execution |' >> $GITHUB_STEP_SUMMARY
