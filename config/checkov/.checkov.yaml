@@ -1,0 +1,108 @@
+# Checkov configuration for Mental Health Days e-commerce infrastructure
+# https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+#
+# Accepted risks are documented below with justification.
+# All suppressions require explicit review and approval when revisited.
+
+directory:
+  - "."
+
+framework:
+  - terraform
+
+# Checks suppressed with documented justification
+skip-check:
+  # CKV_AWS_119: DynamoDB CMK encryption
+  # Justification: DynamoDB tables are encrypted at rest using AWS-managed keys
+  # (AES-256), which satisfies the encryption-at-rest requirement for this project.
+  # Customer-managed CMKs add operational overhead (key rotation, access policy
+  # management) without a proportionate security benefit at the current scale.
+  # Revisit if regulatory requirements (PCI-DSS, HIPAA) mandate CMK encryption.
+  - CKV_AWS_119
+
+  # CKV_AWS_158: CloudWatch Log Group KMS encryption
+  # Justification: CloudWatch log groups are encrypted using the default
+  # AWS-managed encryption. Operational logs (API Gateway access logs) do not
+  # contain sensitive user PII. The api module exposes an optional kms_key_arn
+  # variable to enable CMK encryption when required. Revisit if logs are
+  # expanded to include PII or if compliance requirements mandate CMK.
+  - CKV_AWS_158
+
+  # CKV2_AWS_62: S3 event notifications
+  # Justification: The S3 buckets serve static website content and access logs.
+  # Event notifications are not required for this CDN-delivery pattern and
+  # would add unnecessary complexity and cost.
+  - CKV2_AWS_62
+
+  # CKV_AWS_144: S3 cross-region replication
+  # Justification: Static website assets are source-controlled in Git and can
+  # be redeployed to any region at any time. Cross-region replication adds
+  # storage cost without adding meaningful disaster recovery capability for
+  # static content. CloudFront's global edge network provides the required
+  # availability and performance.
+  - CKV_AWS_144
+
+  # CKV_AWS_310: CloudFront origin failover
+  # Justification: The CloudFront distribution serves a single S3 origin for
+  # static website content. Origin failover requires a secondary origin, which
+  # is not applicable for a single-bucket static website. CloudFront's own
+  # infrastructure provides the required availability guarantees.
+  - CKV_AWS_310
+
+  # CKV_AWS_374: CloudFront geo restriction
+  # Justification: Mental Health Days is a global mental health advocacy and
+  # e-commerce site that must be accessible worldwide. Geo-blocking would
+  # prevent access for users in regions with the greatest need for mental
+  # health resources. WAF rate limiting is applied to mitigate abuse.
+  - CKV_AWS_374
+
+  # CKV2_AWS_47: CloudFront WAFv2 Log4j managed rule
+  # Justification: The CloudFront distribution serves only static files from S3
+  # via OAC. There is no server-side code execution path that would be
+  # vulnerable to Log4Shell (CVE-2021-44228). AWS Managed Rules Core Rule Set
+  # and Known Bad Inputs Rule Set are already applied. Adding the Log4j-specific
+  # managed rule is not warranted for a static website.
+  - CKV2_AWS_47
+
+  # CKV2_AWS_46: CloudFront Origin Access (OAC vs OAI)
+  # Justification: False positive. The distribution correctly uses Origin Access
+  # Control (OAC), which is the modern AWS-recommended successor to Origin
+  # Access Identity (OAI). Checkov may not recognise the OAC pattern in all
+  # versions. The S3 bucket policy is scoped to the specific CloudFront
+  # distribution ARN via the AWS:SourceArn condition.
+  - CKV2_AWS_46
+
+  # CKV2_AWS_38 / CKV2_AWS_39: Route53 DNSSEC and query logging
+  # Justification: DNSSEC and query logging are optional features controlled by
+  # the enable_dnssec and enable_route53_query_logging variables respectively.
+  # These variables default to false as they are not required for all
+  # deployments (e.g. the existing Route 53 zone already managed externally).
+  # Enable via module variables when required.
+  - CKV2_AWS_38
+  - CKV2_AWS_39
+
+  # CKV_TF_1: Terraform module sources should use a commit hash
+  # Justification: Pinned version tags (e.g. version = "1.5.0") are used for
+  # all external module sources, which is the accepted practice documented in
+  # the project's terraform-skill guidelines. Commit hashes would increase
+  # maintenance burden without a proportionate security improvement for modules
+  # sourced from trusted registries (registry.terraform.io).
+  - CKV_TF_1
+
+  # CKV_AWS_109 / CKV_AWS_111 / CKV_AWS_356: KMS key policy wildcard permissions
+  # Justification: The KMS key policy in the aws-budget-management module
+  # grants kms:* to the account root user. This is the required pattern for
+  # KMS key policies — without it, the key becomes unmanageable if all other
+  # administrators are locked out. This follows the AWS-recommended KMS key
+  # policy pattern documented at:
+  # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-default.html
+  - CKV_AWS_109
+  - CKV_AWS_111
+  - CKV_AWS_356
+
+  # CKV_AWS_41: Hard-coded AWS credentials in provider
+  # Justification: False positive. AWS providers do not contain hardcoded
+  # credentials. Authentication uses environment variables or IAM instance
+  # profiles / OIDC roles in CI. Checkov incorrectly flags providers that
+  # specify only region without access_key/secret_key attributes.
+  - CKV_AWS_41

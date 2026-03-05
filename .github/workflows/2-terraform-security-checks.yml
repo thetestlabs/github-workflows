@@ -45,7 +45,7 @@ on:
         type: string
       checkov_config_path:
         description: 'Path to Checkov config file (e.g. .checkov.yml)'
-        default: 'config/checkov/.checkov.yml'
+        default: 'config/checkov/.checkov.yaml'
         required: false
         type: string
       commit_user:

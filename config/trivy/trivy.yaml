@@ -1,0 +1,22 @@
+# Trivy configuration for Mental Health Days e-commerce infrastructure
+# https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
+#
+# Trivy is used for static security scanning of Terraform IaC configurations.
+# Run: trivy config --config trivy.yaml .
+
+scan:
+  # Scan IaC misconfigurations
+  scanners:
+    - misconfig
+
+  # Exit with non-zero code if findings at or above severity threshold
+  exit-code: 1
+
+  # Minimum severity to fail the scan
+  severity:
+    - HIGH
+    - CRITICAL
+
+misconfiguration:
+  # Do not include checks that pass
+  include-non-failures: false
