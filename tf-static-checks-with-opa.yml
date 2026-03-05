@@ -33,11 +33,6 @@ on:
         default: ''
         required: false
         type: string
-      use_opentofu:
-        description: 'Use OpenTofu instead of Terraform'
-        default: false
-        required: false
-        type: boolean
       terraform_version:
         description: 'Terraform version used in github action'
         default: 'latest'
@@ -149,11 +144,6 @@ on:
         required: false
         type: string
     secrets:
-      # GitHub App credentials to use instead of default GITHUB_TOKEN to avoid not triggering workflow runs on commit
-      GH_APP_ID:
-        required: true
-      GH_APP_PRIVATE_KEY:
-        required: true
       # (optional) GitHub App credentials for accessing private Terraform modules (requires 'terraform_modules_auth' to be set to "github-app" and 'terraform_modules_github_owner' to be set)
       TERRAFORM_MODULES_APP_ID:
         required: false
@@ -170,49 +160,30 @@ jobs:
   terraform-fmt:
     if: ${{ inputs.enable_terraform_fmt }}
     runs-on: ${{ inputs.github_runner }}
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       fmt_status: ${{ steps.fmt.outcome }}
       diff_exists: ${{ steps.fmt_commit.outputs.diff }}
 
     steps:
-      - name: Get Github Access Token
-        id: github_app_token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          # if owner and repositories are empty, access will be scoped to only the current repository
-          # owner: ''
-          # repositories: ''
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          token: ${{ steps.github_app_token.outputs.token }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Terraform
-        if: ${{ inputs.use_opentofu == false }}
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform_version }}
           terraform_wrapper: false
 
-      - name: Setup OpenTofu
-        if: ${{ inputs.use_opentofu == true }}
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: ${{ inputs.terraform_version }}
-          tofu_wrapper: false
-
       - name: Terraform Format
         id: fmt
         run: |
-          if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-            tofu fmt -recursive
-          else
             terraform fmt -recursive
-          fi
         working-directory: ${{ inputs.terraform_working_directory }}
 
       - name: Commit files
@@ -230,7 +201,7 @@ jobs:
       - name: Push changes
         uses: ad-m/github-push-action@v1.0.0
         with:
-          github_token: ${{ steps.github_app_token.outputs.token }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.event.pull_request.head.ref || github.ref }}
 
   terraform-docs:
@@ -245,21 +216,11 @@ jobs:
       diff_exists: ${{ steps.docs.outputs.num_changed > 0 }}
 
     steps:
-      - name: Get Github Access Token
-        id: github_app_token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          # if owner and repositories are empty, access will be scoped to only the current repository
-          # owner: ''
-          # repositories: ''
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          token: ${{ steps.github_app_token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Terraform Docs
         id: docs
@@ -287,21 +248,11 @@ jobs:
       lint_status: ${{ steps.lint.outcome }}
 
     steps:
-      - name: Get Github Access Token
-        id: github_app_token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          # if owner and repositories are empty, access will be scoped to only the current repository
-          # owner: ''
-          # repositories: ''
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          token: ${{ steps.github_app_token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get TFLint Config
         uses: terraform-linters/tflint-load-config-action@v2
@@ -311,13 +262,13 @@ jobs:
           source-path: ${{ inputs.tflint_repo_config_path }}
           source-ref: ${{ inputs.tflint_repo_ref }}
           destination-path: .tflint.hcl
-          token: ${{ steps.github_app_token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run TFLint
         uses: reviewdog/action-tflint@v1
         id: lint
         with:
-          github_token: ${{ steps.github_app_token.outputs.token }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           working_directory: ${{ inputs.terraform_working_directory }}
           tflint_version: ${{ inputs.tflint_version }}
           reporter: github-pr-check
@@ -340,27 +291,17 @@ jobs:
       security_status: ${{ steps.security.outcome }}
 
     steps:
-      - name: Get Github Access Token
-        id: github_app_token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GH_APP_ID }}
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          # if owner and repositories are empty, access will be scoped to only the current repository
-          # owner: ''
-          # repositories: ''
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          token: ${{ steps.github_app_token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Run Trivy
         uses: reviewdog/action-trivy@v1
         id: security
         with:
-          github_token: ${{ steps.github_app_token.outputs.token }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           working_directory: ${{ inputs.terraform_working_directory }}
           reporter: github-pr-check
           fail_level: error
@@ -391,16 +332,6 @@ jobs:
       opa_warn_count: ${{ steps.opa.outputs.warn_count }}
 
     steps:
-      - name: Get Private Module Access Token
-        if: ${{ inputs.terraform_modules_auth == 'github-app' }}
-        id: private_module_access
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.TERRAFORM_MODULES_APP_ID }}
-          private-key: ${{ secrets.TERRAFORM_MODULES_APP_PRIVATE_KEY }}
-          # If owner is set and repositories is empty, access will be scoped to all repositories in the provided repository owner's installation
-          owner: ${{ inputs.terraform_modules_github_owner }}
-
       - name: Set Private Module Access Token
         if: ${{ inputs.terraform_modules_auth == 'github-app' }}
         run: |
@@ -415,20 +346,10 @@ jobs:
           persist-credentials: false
 
       - name: Setup Terraform
-        if: ${{ inputs.use_opentofu == false }}
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform_version }}
           terraform_wrapper: false
-          cli_config_credentials_hostname: ${{ inputs.terraform_registry_hostname }}
-          cli_config_credentials_token: ${{ secrets.TERRAFORM_REGISTRY_TOKEN }}
-
-      - name: Setup OpenTofu
-        if: ${{ inputs.use_opentofu == true }}
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: ${{ inputs.terraform_version }}
-          tofu_wrapper: false
           cli_config_credentials_hostname: ${{ inputs.terraform_registry_hostname }}
           cli_config_credentials_token: ${{ secrets.TERRAFORM_REGISTRY_TOKEN }}
 
@@ -451,7 +372,7 @@ jobs:
 
       - name: Configure AWS credentials
         if: ${{ inputs.aws_oidc_role_arn != '' }}
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ inputs.aws_oidc_role_arn }}
           role-session-name: GitHubActions-${{ github.run_id }}
@@ -462,11 +383,7 @@ jobs:
         if: ${{ steps.set_execution_type.outputs.type != 'skip' }}
         id: init
         run: |
-          if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-            tofu init
-          else
-            terraform init
-          fi
+          terraform init
         working-directory: ${{ inputs.terraform_working_directory }}
 
       - name: Terraform Plan
@@ -476,20 +393,11 @@ jobs:
           set -o pipefail
           # Generate binary plan and JSON when OPA is enabled
           if [[ "${{ inputs.enable_opa_policy_check }}" == "true" ]]; then
-            if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-              tofu plan -out=tfplan -no-color -input=false 2>&1 | tee plan_output.txt
-              tofu show -json tfplan > tfplan.json
-            else
-              terraform plan -out=tfplan -no-color -input=false 2>&1 | tee plan_output.txt
-              terraform show -json tfplan > tfplan.json
-            fi
+            terraform plan -out=tfplan -no-color -input=false 2>&1 | tee plan_output.txt
+            terraform show -json tfplan > tfplan.json
           else
             # Standard plan without binary output when OPA is disabled (only for PRs)
-            if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-              tofu plan -no-color -input=false 2>&1 | tee plan_output.txt
-            else
-              terraform plan -no-color -input=false 2>&1 | tee plan_output.txt
-            fi
+            terraform plan -no-color -input=false 2>&1 | tee plan_output.txt
           fi
           # Only capture plan output for plan execution type (PRs)
           if [[ "${{ steps.set_execution_type.outputs.type }}" == "plan" ]]; then
@@ -769,18 +677,10 @@ jobs:
           set -o pipefail
           if [[ "${{ inputs.enable_opa_policy_check }}" == "true" ]]; then
             # Apply the validated plan when OPA is enabled
-            if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-              tofu apply -auto-approve -no-color tfplan 2>&1 | tee apply_output.txt
-            else
-              terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply_output.txt
-            fi
+            terraform apply -auto-approve -no-color tfplan 2>&1 | tee apply_output.txt
           else
             # Standard apply without plan file when OPA is disabled
-            if [[ "${{ inputs.use_opentofu }}" == "true" ]]; then
-              tofu apply -auto-approve -no-color -input=false 2>&1 | tee apply_output.txt
-            else
-              terraform apply -auto-approve -no-color -input=false 2>&1 | tee apply_output.txt
-            fi
+            terraform apply -auto-approve -no-color -input=false 2>&1 | tee apply_output.txt
           fi
         working-directory: ${{ inputs.terraform_working_directory }}
 
