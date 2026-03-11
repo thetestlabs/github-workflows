@@ -439,7 +439,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.3.0
 
       - name: Get Dependencies
         working-directory: ${{ inputs.terratest_path }}
