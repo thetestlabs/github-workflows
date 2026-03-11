@@ -186,7 +186,7 @@ jobs:
 
       - name: Setup Terraform
         if: ${{ inputs.use_opentofu == false }}
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ inputs.terraform_version }}
           terraform_wrapper: false
@@ -466,7 +466,7 @@ jobs:
 
       - name: Setup Terraform
         if: ${{ matrix.binary == 'terraform' }}
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ steps.from_requirements.outputs.terraform_version }}
           terraform_wrapper: false
